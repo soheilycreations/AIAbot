@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-geist-sans: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-geist-mono: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
+}
+
+/* Subtle scrollbar */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* QR code smoothing */
+canvas { image-rendering: pixelated; }
+
+@layer components {
+  .glass {
+    @apply bg-white/5 backdrop-blur-sm border border-white/10;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5
+           text-sm font-semibold text-white shadow-lg
+           transition-all duration-200
+           hover:bg-green-600 hover:-translate-y-0.5
+           active:translate-y-0 active:shadow-none
+           disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 rounded-xl px-4 py-2.5
+           text-sm font-medium text-slate-400
+           transition-all duration-150
+           hover:bg-white/5 hover:text-slate-200;
+  }
+}
