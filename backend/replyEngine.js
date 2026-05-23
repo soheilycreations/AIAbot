@@ -234,16 +234,27 @@ ${businessContext || "No knowledge base configured."}`;
 // ── 9. Database Logger ───────────────────────────────────────────────────────
 async function logMessage(shopId, senderJid, messageText, replySent, replyType) {
   try {
-    await supabase.from("messages").insert({
-      shop_id: shopId, 
-      sender_jid: senderJid,
-      message_text: messageText, 
-      reply_sent: !!replySent,
-      reply_text: replySent || null, 
-      reply_type: replyType,
-    });
-  } catch (err) { 
-    console.error(`Log error:`, err.message); 
+    const { data, error } = await supabase
+      .from("messages")
+      .insert([
+        {
+          shop_id: shopId,
+          sender_jid: senderJid,
+          message_text: messageText,
+          reply_sent: replySent ? true : false, // Boolean ලෙසම යවන්න
+          reply_text: replySent || null,
+          reply_type: replyType || 'none',
+          created_at: new Date().toISOString() // වෙලාව අනිවාර්යයෙන්ම යවන්න
+        },
+      ]);
+
+    if (error) {
+      console.error(`[Supabase Error] Insert failed for shop ${shopId}:`, error);
+    } else {
+      console.log(`[Supabase] Message logged successfully for: ${senderJid}`);
+    }
+  } catch (err) {
+    console.error(`[Fatal Log Error]`, err.message);
   }
 }
 
