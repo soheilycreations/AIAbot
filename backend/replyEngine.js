@@ -57,7 +57,6 @@ async function aiReply(shopId, senderJid, userMessage) {
   if (!businessContext) businessContext = await getFallbackContext(shopId);
 
   // 3. 🌟 PDF eken dynamic instructions / custom rules wenama adala gannawa
-  // Shop eke upload karapu PDF wala file_name eke 'instruction' hari 'rule' hari thiyෙනවා නම් ඒක ගන්නවා
   const { data: ruleDocs } = await supabase
     .from("knowledge_docs")
     .select("content")
@@ -141,8 +140,11 @@ Bot:`;
 async function logMessage(shopId, senderJid, messageText, replySent, replyType) {
   try {
     await supabase.from("messages").insert({
-      shop_id: shopId, sender_jid: senderJid,
-      message_text: messageText, reply_sent: replySent, reply_type: replyType,
+      shop_id: shopId,
+      sender_jid: senderJid,
+      message_text: messageText,
+      reply_sent: replySent,
+      reply_type: replyType,
     });
   } catch (err) { console.error(`Log error:`, err.message); }
 }
@@ -153,20 +155,26 @@ async function handleIncomingMessage(shopId, senderJid, text, waSocket) {
     const { data: shop } = await supabase
       .from("shops").select("auto_reply").eq("id", shopId).single();
 
-    if (!shop?.auto_reply) { await logMessage(shopId, senderJid, text, null, \"none\"); return; }
+    if (!shop?.auto_reply) { 
+      await logMessage(shopId, senderJid, text, null, "none"); 
+      return; 
+    }
 
     let reply = null;
-    let replyType = \"none\";
+    let replyType = "none";
 
     // 1. Keyword match
     reply = await keywordMatch(shopId, text);
-    if (reply) { replyType = \"keyword\"; console.log(`[${shopId}] ✓ Keyword`); }
+    if (reply) { 
+      replyType = "keyword"; 
+      console.log(`[${shopId}] ✓ Keyword`); 
+    }
 
     // 2. RAG AI
     if (!reply) {
       try {
         reply = await aiReply(shopId, senderJid, text);
-        if (reply) replyType = \"ai\";
+        if (reply) replyType = "ai";
       } catch (err) { console.error(`[${shopId}] AI error:`, err.message); }
     }
 
@@ -176,7 +184,7 @@ async function handleIncomingMessage(shopId, senderJid, text, waSocket) {
       await logMessage(shopId, senderJid, text, reply, replyType);
       console.log(`[${shopId}] → Reply sent to ${senderJid} (${replyType})`);
     } else {
-      await logMessage(shopId, senderJid, text, null, \"none\");
+      await logMessage(shopId, senderJid, text, null, "none");
     }
 
   } catch (err) {
