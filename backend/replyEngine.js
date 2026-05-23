@@ -134,7 +134,7 @@ const models = ["google/gemini-2.5-flash", "openai/gpt-4o-mini"];
           model: model, 
           messages: messagesPayload,
           temperature: 0.3,
-          max_tokens: 500,
+          max_tokens: 2048,
         },
         {
           headers: {
