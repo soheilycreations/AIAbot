@@ -1,7 +1,6 @@
 /**
- * replyEngine.js — RAG-Powered Reply Engine (OpenRouter Safe Version)
+ * replyEngine.js — RAG-Powered Reply Engine (OpenRouter Fixed Version)
  * Uses pgvector similarity search for accurate context retrieval
- * Dynamically loads system instructions safely from shop PDFs
  */
 
 const axios = require("axios");
@@ -44,11 +43,13 @@ async function getFallbackContext(shopId) {
   return context.trim() || null;
 }
 
-// ── AI Reply Generation (RAG + History + Dynamic PDF Rules) ─────────────────
+// ── AI Reply Generation (RAG + History) ───────────────────────────────────────
 async function aiReply(shopId, senderJid, userMessage) {
-  const apiKey = process.env.GEMINI_API_KEY?.trim(); 
+  // 🌟 NOTE: ඔයා Railway එකේ OpenRouter key එක දාලා තියෙන Variable Name එක මෙතනට දෙන්න (e.g., OPENROUTER_API_KEY හෝ GEMINI_API_KEY)
+  const apiKey = (process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY || "").trim();
+  
   if (!apiKey) {
-    console.error(`[${shopId}] OpenRouter API key is missing!`);
+    console.error(`[${shopId}] OpenRouter API key is missing in Environment Variables!`);
     return null;
   }
 
@@ -58,19 +59,7 @@ async function aiReply(shopId, senderJid, userMessage) {
   let businessContext = await retrieveRelevantChunks(shopId, userMessage, 4);
   if (!businessContext) businessContext = await getFallbackContext(shopId);
 
-  const { data: ruleDocs } = await supabase
-    .from("knowledge_docs")
-    .select("content")
-    .eq("shop_id", shopId)
-    .or("file_name.ilike.%instruction%,file_name.ilike.%rule%");
-
-  let dynamicInstructions = "";
-  
-  if (Array.isArray(ruleDocs) && ruleDocs.length > 0) {
-    dynamicInstructions = ruleDocs.map(d => d.content).join("\n\n");
-    console.log(`[${shopId}] ✓ Dynamic instructions loaded from PDF`);
-  } else {
-    dynamicInstructions = `
+  const systemInstructions = `
 You are an advanced, empathetic, and highly trained AI Customer Service Assistant. 
 Your behavior, business logic, rules, and knowledge are entirely driven by the provided "Business Knowledge Context".
 
@@ -80,25 +69,17 @@ CRITICAL OPERATIONAL RULES:
    - If the customer writes in "Sinhala script" (සිංහල), reply ONLY in professional and warm Sinhala.
    - If the customer writes in "English", reply ONLY in professional, fluent English.
 
-2. CONSULTATIVE CHATTING (NEEDS ASSESSMENT):
-   - Do NOT just dump all information at once. Chat conversationally.
-   - Ask clarifying questions to understand the customer's exact needs or problems.
-
-3. TRUTHFULNESS & STRICT LIMITS:
+2. TRUTHFULNESS & STRICT LIMITS:
    - Use ONLY real data, prices, numbers, and policies explicitly mentioned in the "Business Knowledge Context".
    - Do NOT hallucinate or guess any details.
 
-4. HUMAN AGENT HANDOFF:
+3. HUMAN AGENT HANDOFF:
    - If the customer asks a question that is NOT available in the context, politely ask: "Mage knowledge base eke e gana wisthara thama na. Puluwan nam ape Customer Care Agent kenekwa oyaata sambanda karala dhennada? 😊"`;
-  }
 
   const historyText = history.map(h => `${h.role === 'user' ? 'Customer' : 'Bot'}: ${h.parts}`).join("\n");
 
   const finalPrompt = `
-You are an advanced AI Customer Service Assistant. Your behavior, voice, and operation rules are strictly defined by the "OPERATIONAL SYSTEM RULES" below.
-
-[OPERATIONAL SYSTEM RULES (LOADED FROM SHOP PDF)]
-${dynamicInstructions}
+${systemInstructions}
 
 [BUSINESS KNOWLEDGE CONTEXT]
 ${businessContext || "No business details available."}
@@ -110,10 +91,10 @@ ${historyText}
 Customer: ${userMessage}
 Bot:`;
 
-  // ── OpenRouter API Call ──────────────────────────────────────────────────
+  // ── OpenRouter API Call (Fixed URL & Parsing) ──────────────────────────────
   try {
     const response = await axios.post(
-      "https://openrouter.ai/ai/v1/chat/completions",
+      "https://openrouter.ai/api/v1/chat/completions",
       {
         model: "google/gemini-1.5-flash", 
         messages: [{ role: "user", content: finalPrompt }],
