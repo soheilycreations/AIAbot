@@ -1,7 +1,7 @@
 /**
- * replyEngine.js — RAG-Powered Reply Engine (OpenRouter Version)
+ * replyEngine.js — RAG-Powered Reply Engine (OpenRouter Safe Version)
  * Uses pgvector similarity search for accurate context retrieval
- * Dynamically loads system instructions from shop PDFs
+ * Dynamically loads system instructions safely from shop PDFs
  */
 
 const axios = require("axios");
@@ -46,7 +46,7 @@ async function getFallbackContext(shopId) {
 
 // ── AI Reply Generation (RAG + History + Dynamic PDF Rules) ─────────────────
 async function aiReply(shopId, senderJid, userMessage) {
-  const apiKey = process.env.GEMINI_API_KEY?.trim(); // Railway eke thiyena OpenRouter key eka gannawa
+  const apiKey = process.env.GEMINI_API_KEY?.trim(); 
   if (!apiKey) {
     console.error(`[${shopId}] OpenRouter API key is missing!`);
     return null;
@@ -65,7 +65,9 @@ async function aiReply(shopId, senderJid, userMessage) {
     .or("file_name.ilike.%instruction%,file_name.ilike.%rule%");
 
   let dynamicInstructions = "";
-  if (ruleDocs && ruleDocs.length > 0) {
+  
+  // 🌟 FIX: Array එකක්මද කියලා ෂුවර් කරගෙන (Array.isArray) map එක run කරනවා. නැත්නම් Crash වෙන්නේ නෑ.
+  if (Array.isArray(ruleDocs) && ruleDocs.length > 0) {
     dynamicInstructions = ruleDocs.map(d => d.content).join("\n\n");
     console.log(`[${shopId}] ✓ Dynamic instructions loaded from PDF`);
   } else {
@@ -89,109 +91,3 @@ CRITICAL OPERATIONAL RULES:
 
 4. HUMAN AGENT HANDOFF:
    - If the customer asks a question that is NOT available in the context, politely ask: "Mage knowledge base eke e gana wisthara thama na. Puluwan nam ape Customer Care Agent kenekwa oyaata sambanda karala dhennada? 😊"`;
-  }
-
-  const historyText = history.map(h => `${h.role === 'user' ? 'Customer' : 'Bot'}: ${h.parts}`).join("\n");
-
-  const finalPrompt = `
-You are an advanced AI Customer Service Assistant. Your behavior, voice, and operation rules are strictly defined by the "OPERATIONAL SYSTEM RULES" below.
-
-[OPERATIONAL SYSTEM RULES (LOADED FROM SHOP PDF)]
-${dynamicInstructions}
-
-[BUSINESS KNOWLEDGE CONTEXT]
-${businessContext || "No business details available."}
-
-[CONVERSATION HISTORY]
-${historyText}
-
-[CURRENT INPUT]
-Customer: ${userMessage}
-Bot:`;
-
-  // ── OpenRouter API Call ──────────────────────────────────────────────────
-  try {
-    const response = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        model: "google/gemini-1.5-flash", 
-        messages: [{ role: "user", content: finalPrompt }],
-        temperature: 0.3,
-        max_tokens: 600,
-      },
-      {
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "https://aiabot-frontend-production.up.railway.app",
-          "X-Title": "WhatsApp Bot Platform"
-        },
-        timeout: 15000
-      }
-    );
-
-    // OpenRouter parsing logic
-    const botReply = response.data?.choices?.[0]?.message?.content?.trim();
-
-    if (botReply) {
-      history.push({ role: "user", parts: userMessage });
-      history.push({ role: "model", parts: botReply });
-      if (history.length > MAX_HISTORY * 2) history.splice(0, 2);
-    }
-
-    return botReply || null;
-
-  } catch (err) {
-    console.error(`[${shopId}] OpenRouter API Error:`, err.response?.data || err.message);
-    return null;
-  }
-}
-
-// ── Log Message to Database ──────────────────────────────────────────────────
-async function logMessage(shopId, senderJid, messageText, replySent, replyType) {
-  try {
-    await supabase.from("messages").insert({
-      shop_id: shopId, sender_jid: senderJid,
-      message_text: messageText, reply_sent: replySent, reply_type: replyType,
-    });
-  } catch (err) { console.error(`Log error:`, err.message); }
-}
-
-// ── Main handler ──────────────────────────────────────────────────────────────
-async function handleIncomingMessage(shopId, senderJid, text, waSocket) {
-  try {
-    const { data: shop } = await supabase
-      .from("shops").select("auto_reply").eq("id", shopId).single();
-
-    if (!shop?.auto_reply) { await logMessage(shopId, senderJid, text, null, "none"); return; }
-
-    let reply = null;
-    let replyType = "none";
-
-    // 1. Keyword match
-    reply = await keywordMatch(shopId, text);
-    if (reply) { replyType = "keyword"; console.log(`[${shopId}] ✓ Keyword`); }
-
-    // 2. RAG AI (OpenRouter)
-    if (!reply) {
-      try {
-        reply = await aiReply(shopId, senderJid, text);
-        if (reply) replyType = "ai";
-      } catch (err) { console.error(`[${shopId}] AI error:`, err.message); }
-    }
-
-    // 3. Send Message
-    if (reply) {
-      await waSocket.sendMessage(senderJid, { text: reply });
-      await logMessage(shopId, senderJid, text, reply, replyType);
-      console.log(`[${shopId}] → Reply sent to ${senderJid} (${replyType})`);
-    } else {
-      await logMessage(shopId, senderJid, text, null, "none");
-    }
-
-  } catch (err) {
-    console.error(`[${shopId}] Error handling incoming message:`, err.message);
-  }
-}
-
-module.exports = { handleIncomingMessage };
