@@ -124,7 +124,7 @@ async function getFallbackContext(shopId) {
 // ── 7. AI Reply Core Logic (OpenRouter + Fallback Model Strategy) ─────────────
 async function callOpenRouterWithFallback(messagesPayload, apiKey) {
   // Model Fallback Strategy: Gemini ප්‍රධාන වශයෙන්ම වැඩ කරනවා, අවුලක් ගියොත් gpt-4o-mini එකට ස්විච් වෙනවා
-  const models = ["google/gemini-1.5-flash", "openai/gpt-4o-mini"];
+const models = ["google/gemini-2.5-flash", "openai/gpt-4o-mini"];
   
   for (const model of models) {
     try {
