@@ -1,5 +1,5 @@
 /**
- * replyEngine.js — RAG-Powered Reply Engine
+ * replyEngine.js — RAG-Powered Reply Engine (OpenRouter Version)
  * Uses pgvector similarity search for accurate context retrieval
  * Dynamically loads system instructions from shop PDFs
  */
@@ -46,17 +46,18 @@ async function getFallbackContext(shopId) {
 
 // ── AI Reply Generation (RAG + History + Dynamic PDF Rules) ─────────────────
 async function aiReply(shopId, senderJid, userMessage) {
-  if (!process.env.GEMINI_API_KEY) return null;
+  const apiKey = process.env.GEMINI_API_KEY?.trim(); // Railway eke thiyena OpenRouter key eka gannawa
+  if (!apiKey) {
+    console.error(`[${shopId}] OpenRouter API key is missing!`);
+    return null;
+  }
 
-  // 1. Conversation History Setup
   if (!conversationHistory.has(senderJid)) conversationHistory.set(senderJid, []);
   const history = conversationHistory.get(senderJid);
 
-  // 2. PDF eken adala business knowledge chunks tika gannawa
   let businessContext = await retrieveRelevantChunks(shopId, userMessage, 4);
   if (!businessContext) businessContext = await getFallbackContext(shopId);
 
-  // 3. 🌟 PDF eken dynamic instructions / custom rules wenama adala gannawa
   const { data: ruleDocs } = await supabase
     .from("knowledge_docs")
     .select("content")
@@ -68,7 +69,6 @@ async function aiReply(shopId, senderJid, userMessage) {
     dynamicInstructions = ruleDocs.map(d => d.content).join("\n\n");
     console.log(`[${shopId}] ✓ Dynamic instructions loaded from PDF`);
   } else {
-    // Default system instructions (Fallback eka) rules mukuth nathi shop walata
     dynamicInstructions = `
 You are an advanced, empathetic, and highly trained AI Customer Service Assistant. 
 Your behavior, business logic, rules, and knowledge are entirely driven by the provided "Business Knowledge Context".
@@ -81,21 +81,18 @@ CRITICAL OPERATIONAL RULES:
 
 2. CONSULTATIVE CHATTING (NEEDS ASSESSMENT):
    - Do NOT just dump all information at once. Chat conversationally.
-   - Ask clarifying questions to understand the customer's exact needs or problems so they realize the value of the product/service themselves.
+   - Ask clarifying questions to understand the customer's exact needs or problems.
 
 3. TRUTHFULNESS & STRICT LIMITS:
    - Use ONLY real data, prices, numbers, and policies explicitly mentioned in the "Business Knowledge Context".
-   - Do NOT hallucinate, invent, or guess any details.
+   - Do NOT hallucinate or guess any details.
 
-4. HUMAN AGENT HANDOFF (THE ESCALATION RULE):
-   - If the customer asks a question that is NOT available in the context (unknown knowledge), or if they express frustration, politely tell them that you don't have that specific detail right now and ask: "Mage knowledge base eke e gana wisthara thama na. Puluwan nam ape Customer Care Agent kenekwa oyaata sambanda karala dhennada? 😊"
-   - Do NOT show this agent handoff option on every normal reply—ONLY when you don't know the answer or when the conversation reaches a natural closing/buying point.`;
+4. HUMAN AGENT HANDOFF:
+   - If the customer asks a question that is NOT available in the context, politely ask: "Mage knowledge base eke e gana wisthara thama na. Puluwan nam ape Customer Care Agent kenekwa oyaata sambanda karala dhennada? 😊"`;
   }
 
-  // 4. History text eka build karagannawa
   const historyText = history.map(h => `${h.role === 'user' ? 'Customer' : 'Bot'}: ${h.parts}`).join("\n");
 
-  // 5. Final Prompt eka Gemini ekata yavana widihata hadagannawa
   const finalPrompt = `
 You are an advanced AI Customer Service Assistant. Your behavior, voice, and operation rules are strictly defined by the "OPERATIONAL SYSTEM RULES" below.
 
@@ -112,39 +109,50 @@ ${historyText}
 Customer: ${userMessage}
 Bot:`;
 
-  // 6. Gemini API call eka (v1beta endpoint)
-  const response = await axios.post(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-    {
-      contents: [{ parts: [{ text: finalPrompt }] }],
-      generationConfig: {
+  // ── OpenRouter API Call ──────────────────────────────────────────────────
+  try {
+    const response = await axios.post(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        model: "google/gemini-1.5-flash", 
+        messages: [{ role: "user", content: finalPrompt }],
         temperature: 0.3,
-        maxOutputTokens: 600,
+        max_tokens: 600,
       },
-    },
-    { timeout: 15000 }
-  );
+      {
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://aiabot-frontend-production.up.railway.app",
+          "X-Title": "WhatsApp Bot Platform"
+        },
+        timeout: 15000
+      }
+    );
 
-  const botReply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    // OpenRouter parsing logic
+    const botReply = response.data?.choices?.[0]?.message?.content?.trim();
 
-  if (botReply) {
-    history.push({ role: "user", parts: userMessage });
-    history.push({ role: "model", parts: botReply });
-    if (history.length > MAX_HISTORY * 2) history.splice(0, 2);
+    if (botReply) {
+      history.push({ role: "user", parts: userMessage });
+      history.push({ role: "model", parts: botReply });
+      if (history.length > MAX_HISTORY * 2) history.splice(0, 2);
+    }
+
+    return botReply || null;
+
+  } catch (err) {
+    console.error(`[${shopId}] OpenRouter API Error:`, err.response?.data || err.message);
+    return null;
   }
-
-  return botReply || null;
 }
 
 // ── Log Message to Database ──────────────────────────────────────────────────
 async function logMessage(shopId, senderJid, messageText, replySent, replyType) {
   try {
     await supabase.from("messages").insert({
-      shop_id: shopId,
-      sender_jid: senderJid,
-      message_text: messageText,
-      reply_sent: replySent,
-      reply_type: replyType,
+      shop_id: shopId, sender_jid: senderJid,
+      message_text: messageText, reply_sent: replySent, reply_type: replyType,
     });
   } catch (err) { console.error(`Log error:`, err.message); }
 }
@@ -155,22 +163,16 @@ async function handleIncomingMessage(shopId, senderJid, text, waSocket) {
     const { data: shop } = await supabase
       .from("shops").select("auto_reply").eq("id", shopId).single();
 
-    if (!shop?.auto_reply) { 
-      await logMessage(shopId, senderJid, text, null, "none"); 
-      return; 
-    }
+    if (!shop?.auto_reply) { await logMessage(shopId, senderJid, text, null, "none"); return; }
 
     let reply = null;
     let replyType = "none";
 
     // 1. Keyword match
     reply = await keywordMatch(shopId, text);
-    if (reply) { 
-      replyType = "keyword"; 
-      console.log(`[${shopId}] ✓ Keyword`); 
-    }
+    if (reply) { replyType = "keyword"; console.log(`[${shopId}] ✓ Keyword`); }
 
-    // 2. RAG AI
+    // 2. RAG AI (OpenRouter)
     if (!reply) {
       try {
         reply = await aiReply(shopId, senderJid, text);
