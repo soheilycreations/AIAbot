@@ -70,11 +70,23 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     }
 
     // Save to knowledge_docs
-    const { data, error } = await supabase
+    // 🔄 Save to knowledge_docs (Fixed Supabase Syntax)
+    const { data: insertedRows, error } = await supabase
       .from("knowledge_docs")
-      .insert({ shop_id: shopId, file_name: originalname, file_type: mimetype, content: content.trim() })
-      .select().single();
+      .insert({ 
+        shop_id: shopId, 
+        file_name: originalname, 
+        file_type: mimetype, 
+        content: content.trim() 
+      })
+      .select();
 
+    if (error) return res.status(500).json({ error: error.message });
+    if (!insertedRows || insertedRows.length === 0) {
+      return res.status(500).json({ error: "Failed to insert document" });
+    }
+
+    const data = insertedRows[0]; // Get the first inserted record
     if (error) return res.status(500).json({ error: error.message });
 
     // Process embeddings in background (don't wait)
